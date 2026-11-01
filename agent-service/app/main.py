@@ -15,8 +15,18 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from app import __version__
 from app.agent import AgentRunner
 from app.config import Settings, get_settings
-from app.schemas import AgentEvent, AgentResponse, HealthResponse, PRReviewInput, PRReviewResponse, RunRequest
+from app.schemas import (
+    AdversarialReviewRequest,
+    AdversarialReviewResponse,
+    AgentEvent,
+    AgentResponse,
+    HealthResponse,
+    PRReviewInput,
+    PRReviewResponse,
+    RunRequest,
+)
 from app.tools import list_tool_names
+from app.tools.dual_agent_triage import run_adversarial_dev_loop
 from app.tools.pr_review_tool import audit_code_changes
 
 
@@ -95,9 +105,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         description=(
             "Typed tool-calling loop for an edge inference config check, "
-            "plus a deterministic PR diff audit. "
+            "plus a deterministic PR diff audit and a developer-versus-QA loop. "
             "Invalid tool arguments come back inside the agent response. "
-            "An empty LLM_API_KEY keeps both demos on fixed rules."
+            "An empty LLM_API_KEY keeps these demos on fixed rules."
         ),
         lifespan=lifespan,
     )
@@ -211,6 +221,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             Risk, findings, test names, and the three tool traces.
         """
         return audit_code_changes(payload)
+
+    @application.post(
+        "/api/v1/adversarial-review",
+        response_model=AdversarialReviewResponse,
+        tags=["review"],
+    )
+    async def run_adversarial_review(
+        payload: AdversarialReviewRequest,
+    ) -> AdversarialReviewResponse:
+        """Run the fixed developer snippet, then the hardened one, against one QA script.
+
+        The task sentence is recorded on the summary. The source under test
+        does not come from the request.
+
+        Parameters
+        ----------
+        payload : AdversarialReviewRequest
+            Feature sentence. An empty object uses the default sentence.
+
+        Returns
+        -------
+        AdversarialReviewResponse
+            First failure, second pass, and the named edge cases.
+        """
+        return run_adversarial_dev_loop(payload.task)
 
     return application
 

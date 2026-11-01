@@ -1,8 +1,8 @@
 # Edge Agent Service
 
-Small FastAPI service with two deterministic demos: an edge-config FPS check
-and a PR diff audit. No GPU and no API key are required. An empty `LLM_API_KEY`
-keeps both paths on fixed rules.
+Small FastAPI service with three deterministic demos: an edge-config FPS check,
+a PR diff audit, and a developer-versus-QA loop. No GPU and no API key are
+required. An empty `LLM_API_KEY` keeps every path on fixed rules.
 
 Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The service root redirects there.
 
@@ -10,14 +10,20 @@ Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The
 
 ```text
 Client
-  -> FastAPI                         /health  /api/v1/run  /api/v1/stream  /api/v1/pr-review
+  -> FastAPI                         /health  /api/v1/run  /api/v1/stream  /api/v1/pr-review  /api/v1/adversarial-review
     -> Pydantic schema validator     RunRequest or PRReviewInput
       -> Agent orchestrator          sliding window, one device repair, mock fallback
         -> Typed tools               evaluate_edge_config
                                      analyze_pr_diff
                                      generate_pytest_stub
                                      calculate_review_risk_score
+                                     execute_in_sandbox
 ```
+
+`POST /api/v1/adversarial-review` runs two fixed snippets. The first divides by
+duration and fails the QA script with `ZeroDivisionError`. The second rejects a
+non-positive duration and the same script passes. The request `task` is only a
+label. Caller source is not executed.
 
 `POST /api/v1/pr-review` always runs the three review tools in that order.
 Zero issues is Low and `approve`. One issue is Medium. Two or more is High.
@@ -36,13 +42,15 @@ A restart clears it. Pass `messages` to replace that window for one call.
 ```text
 agent-service/
 ├── app/
-│   ├── main.py                 # /health, /api/v1/run, /api/v1/stream, /api/v1/pr-review
+│   ├── main.py                 # /health, /run, /stream, /pr-review, /adversarial-review
 │   ├── config.py               # Pydantic Settings from .env
 │   ├── schemas.py              # request, response, and tool contracts
 │   ├── agent.py                # dispatch loop, repair, mock fallback
 │   └── tools/
 │       ├── metrics_tool.py     # deterministic FPS estimate
-│       └── pr_review_tool.py   # diff checks, pytest stub, merge risk
+│       ├── pr_review_tool.py   # diff checks, pytest stub, merge risk
+│       ├── test_runner_tool.py # one QA script in a fresh namespace
+│       └── dual_agent_triage.py # naive pass, then hardened pass
 ├── tests/
 ├── Dockerfile
 ├── docker-compose.yml
@@ -154,6 +162,16 @@ curl -s http://localhost:8000/api/v1/pr-review \
 The audit reports High risk, `can_auto_merge: false`, and these test names:
 `test_agent_edge_cases`, `test_agent_invalid_schema_handling`.
 Checks, in order: a `def` with no `->` anywhere in the text, a bare `except:` or `except Exception`, then `TODO` or `FIXME`.
+
+## Developer versus QA sample
+
+```bash
+curl -s http://localhost:8000/api/v1/adversarial-review \
+  -H 'Content-Type: application/json' \
+  -d '{"task":"Implement edge throughput calculation with zero-division safety"}'
+```
+
+`runs[0]` fails with `ZeroDivisionError`. `runs[1]` passes. `final_status` is `Passed`.
 
 ## What the trace is for
 

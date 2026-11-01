@@ -47,6 +47,7 @@ def test_health_reports_the_mock_worker(client: TestClient) -> None:
         "analyze_pr_diff",
         "calculate_review_risk_score",
         "evaluate_edge_config",
+        "execute_in_sandbox",
         "generate_pytest_stub",
     ]
 
@@ -346,3 +347,51 @@ def test_pr_review_rejects_a_non_positive_id(client: TestClient) -> None:
         json={"pr_id": 0, "file_path": "app/agent.py", "diff_content": "def run() -> None:\n    return\n"},
     )
     assert response.status_code == 422
+
+
+def test_adversarial_review_fails_then_passes(client: TestClient) -> None:
+    """Show the naive divide-by-zero, then the hardened pass.
+
+    Parameters
+    ----------
+    client : TestClient
+        Mock-mode application client.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    response = client.post(
+        "/api/v1/adversarial-review",
+        json={"task": "Implement edge throughput calculation with zero-division safety"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["mode"] == "mock"
+    assert body["summary"]["iterations"] == 2
+    assert body["summary"]["final_status"] == "Passed"
+    assert "ZeroDivisionError" in body["summary"]["initial_flaw_detected"]
+    assert body["runs"][0]["result"]["passed"] is False
+    assert body["runs"][1]["result"]["passed"] is True
+    assert body["runs"][1]["result"]["failed_tests"] == 0
+
+
+def test_sandbox_reports_a_blocked_import() -> None:
+    """Keep an import attempt inside the runner result.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    from app.schemas import TestExecutionInput
+    from app.tools.test_runner_tool import execute_in_sandbox
+
+    result = execute_in_sandbox(
+        TestExecutionInput(source_code="import os\n", test_code="assert True\n")
+    )
+    assert result.passed is False
+    assert result.total_tests == 0
+    assert result.failure_details

@@ -6,8 +6,16 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from app.schemas import BenchmarkInput, PRReviewInput, RiskScoreInput, ToolError, ToolInvocation
+from app.schemas import (
+    BenchmarkInput,
+    PRReviewInput,
+    RiskScoreInput,
+    TestExecutionInput,
+    ToolError,
+    ToolInvocation,
+)
 from app.tools.metrics_tool import evaluate_edge_config
+from app.tools.test_runner_tool import EXECUTE_TOOL, execute_in_sandbox
 from app.tools.pr_review_tool import (
     ANALYZE_TOOL,
     RISK_TOOL,
@@ -61,6 +69,15 @@ def _build_registry() -> dict[str, ToolSpec]:
             description="Build a deterministic pytest skeleton from the changed file name.",
             input_model=PRReviewInput,
             handler=generate_pytest_stub,
+        ),
+        EXECUTE_TOOL: ToolSpec(
+            name=EXECUTE_TOOL,
+            description=(
+                "Run one QA script against one implementation in a fresh namespace. "
+                "Imports and file access are not available."
+            ),
+            input_model=TestExecutionInput,
+            handler=execute_in_sandbox,
         ),
         RISK_TOOL: ToolSpec(
             name=RISK_TOOL,

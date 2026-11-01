@@ -1,0 +1,48 @@
+name: AI PR Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  agent-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: agent-service/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r agent-service/requirements.txt
+
+      - name: Run PR Review Agent
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          PYTHONPATH: agent-service
+        run: python scripts/review_pr.py
+
+      - name: Post comment to Pull Request
+        if: always()
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: pr_review_comment.md
+          comment_tag: ai-pr-review
+          mode: recreate
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

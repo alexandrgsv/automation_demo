@@ -1,5 +1,7 @@
-"""HTTP and tool contracts for the edge agent service.
+"""HTTP contracts for the edge agent service.
 
+Skill argument and result models live next to their skill, under
+``app.skills``. They are re-exported here so existing imports keep working.
 Input models reject unknown fields. Tool-argument failures stay inside the
 agent response so a bad device name does not become an HTTP 500.
 """
@@ -8,68 +10,50 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.skills.adversarial_review.schema import (
+    AdversarialCycleSummary,
+    AdversarialReviewRequest,
+    AdversarialReviewResponse,
+    LoopIteration,
+    TestExecutionInput,
+    TestExecutionResult,
+)
+from app.skills.edge_fps_evaluator.schema import BenchmarkInput, EdgeBenchmarkResult
+from app.skills.pr_code_reviewer.schema import (
+    DiffAnalysis,
+    PRReviewInput,
+    PRReviewSummary,
+    PytestStub,
+    ReviewMetrics,
+    RiskScore,
+    RiskScoreInput,
+)
 
-class BenchmarkInput(BaseModel):
-    """Arguments for the deterministic edge-config benchmark.
-
-    Attributes
-    ----------
-    batch_size : int
-        Inference batch size. Values outside 1..64 are rejected.
-    device : str
-        Execution target. Only ``cpu``, ``cuda``, and ``tensorrt`` are valid.
-    target_fps : float
-        FPS the config is required to reach.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    batch_size: int = Field(
-        gt=0,
-        le=64,
-        description="Inference batch size. Must be from 1 to 64.",
-        examples=[2],
-    )
-    device: str = Field(
-        pattern=r"^(cpu|cuda|tensorrt)$",
-        description="Execution target: cpu, cuda, or tensorrt.",
-        examples=["cuda"],
-    )
-    target_fps: float = Field(
-        gt=0,
-        description="Required FPS. The tool compares its estimate with this value.",
-        examples=[30],
-    )
-
-
-class EdgeBenchmarkResult(BaseModel):
-    """Deterministic estimate produced by ``evaluate_edge_config``.
-
-    Attributes
-    ----------
-    device : str
-        Device that was evaluated.
-    batch_size : int
-        Batch size that was evaluated.
-    estimated_latency_ms : float
-        Stacked latency for the whole batch, in milliseconds.
-    estimated_fps : float
-        Throughput implied by that latency.
-    target_fps : float
-        Threshold copied from the request.
-    meets_requirements : bool
-        True when ``estimated_fps`` is at least ``target_fps``.
-    bottleneck_detected : bool
-        True when the estimate misses the target.
-    """
-
-    device: str = Field(description="Device that was evaluated.")
-    batch_size: int = Field(description="Batch size that was evaluated.")
-    estimated_latency_ms: float = Field(description="Estimated batch latency in milliseconds.")
-    estimated_fps: float = Field(description="Estimated throughput in frames per second.")
-    target_fps: float = Field(description="FPS threshold from the request.")
-    meets_requirements: bool = Field(description="True when the estimate reaches the target.")
-    bottleneck_detected: bool = Field(description="True when the estimate misses the target.")
+__all__ = [
+    "AdversarialCycleSummary",
+    "AdversarialReviewRequest",
+    "AdversarialReviewResponse",
+    "AgentEvent",
+    "AgentResponse",
+    "BenchmarkInput",
+    "ChatMessage",
+    "DiffAnalysis",
+    "EdgeBenchmarkResult",
+    "HealthResponse",
+    "LoopIteration",
+    "PRReviewInput",
+    "PRReviewResponse",
+    "PRReviewSummary",
+    "PytestStub",
+    "ReviewMetrics",
+    "RiskScore",
+    "RiskScoreInput",
+    "RunRequest",
+    "TestExecutionInput",
+    "TestExecutionResult",
+    "ToolError",
+    "ToolInvocation",
+]
 
 
 class ChatMessage(BaseModel):
@@ -271,167 +255,6 @@ class HealthResponse(BaseModel):
     registered_tools: list[str] = Field(description="Tools loaded in this process.")
 
 
-class PRReviewInput(BaseModel):
-    """Diff submitted to the PR triage pipeline.
-
-    Attributes
-    ----------
-    pr_id : int
-        Pull request identifier. Zero and negative values are rejected.
-    file_path : str
-        Repository path of the changed file.
-    diff_content : str
-        Git diff text, or the source of the changed function.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {
-                    "pr_id": 42,
-                    "file_path": "app/agent.py",
-                    "diff_content": (
-                        "def run(data):\n"
-                        "    try:\n"
-                        "        return data\n"
-                        "    except:\n"
-                        "        pass\n"
-                        "# TODO: narrow the handler\n"
-                    ),
-                }
-            ]
-        },
-    )
-
-    pr_id: int = Field(gt=0, description="Pull request identifier.", examples=[42])
-    file_path: str = Field(
-        min_length=1,
-        max_length=512,
-        description="Path of the changed file.",
-        examples=["app/agent.py"],
-    )
-    diff_content: str = Field(
-        min_length=1,
-        max_length=20000,
-        description="Git diff text, or the source of the changed function.",
-    )
-
-
-class DiffAnalysis(BaseModel):
-    """Issues found by ``analyze_pr_diff``.
-
-    Attributes
-    ----------
-    detected_issues : list[str]
-        Stable messages, in check order. Empty when the diff passes.
-    """
-
-    detected_issues: list[str] = Field(
-        default_factory=list,
-        description="Practice findings, in check order. Empty when the diff passes.",
-    )
-
-
-class PytestStub(BaseModel):
-    """Deterministic pytest skeleton for one changed file.
-
-    Attributes
-    ----------
-    suggested_tests : list[str]
-        Test function names derived from the file name.
-    stub_source : str
-        Python source of those tests. Each body raises ``NotImplementedError``.
-    """
-
-    suggested_tests: list[str] = Field(description="Test names derived from the file name.")
-    stub_source: str = Field(description="Pytest source. Each test raises NotImplementedError.")
-
-
-class RiskScoreInput(BaseModel):
-    """Issues passed from the diff analysis into the risk score.
-
-    Attributes
-    ----------
-    detected_issues : list[str]
-        Messages produced by ``analyze_pr_diff``.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    detected_issues: list[str] = Field(
-        default_factory=list,
-        description="Issues produced by analyze_pr_diff.",
-    )
-
-
-class RiskScore(BaseModel):
-    """Merge risk and the review recommendation.
-
-    Attributes
-    ----------
-    risk_level : {"Low", "Medium", "High"}
-        Low for no issues, Medium for one, High for two or more.
-    recommendation : {"approve", "request_changes"}
-        ``approve`` only when the risk is Low.
-    can_auto_merge : bool
-        True only when the recommendation is ``approve``.
-    """
-
-    risk_level: Literal["Low", "Medium", "High"] = Field(description="Low, Medium, or High.")
-    recommendation: Literal["approve", "request_changes"] = Field(
-        description="approve when the risk is Low, otherwise request_changes."
-    )
-    can_auto_merge: bool = Field(description="True only when the recommendation is approve.")
-
-
-class PRReviewSummary(BaseModel):
-    """Combined audit returned by the PR triage pipeline.
-
-    Attributes
-    ----------
-    risk_level : {"Low", "Medium", "High"}
-        Score from ``calculate_review_risk_score``.
-    detected_issues : list[str]
-        Findings from ``analyze_pr_diff``.
-    suggested_tests : list[str]
-        Names from ``generate_pytest_stub``.
-    can_auto_merge : bool
-        True only for a Low risk.
-    review_time_saved_minutes : int
-        Fixed demo estimate of reviewer time removed by the pipeline.
-    recommendation : {"approve", "request_changes"}
-        Same decision as ``can_auto_merge``, spelled out for the review comment.
-    """
-
-    risk_level: Literal["Low", "Medium", "High"] = Field(description="Low, Medium, or High.")
-    detected_issues: list[str] = Field(description="Findings from analyze_pr_diff.")
-    suggested_tests: list[str] = Field(description="Test names from generate_pytest_stub.")
-    can_auto_merge: bool = Field(description="True only when the risk is Low.")
-    review_time_saved_minutes: int = Field(
-        ge=0,
-        description="Fixed estimate of reviewer minutes removed by this audit.",
-    )
-    recommendation: Literal["approve", "request_changes"] = Field(
-        description="approve when the risk is Low, otherwise request_changes."
-    )
-
-
-class ReviewMetrics(BaseModel):
-    """Headline numbers attached to a PR review response.
-
-    Attributes
-    ----------
-    estimated_time_saved : str
-        The saved-minutes figure, ready to read on a slide.
-    cycle_reduction : str
-        One sentence about the review cycle the demo claims.
-    """
-
-    estimated_time_saved: str = Field(description="Saved reviewer time, as a short label.")
-    cycle_reduction: str = Field(description="Review-cycle claim for this demo.")
-
-
 class PRReviewResponse(BaseModel):
     """Body of ``POST /api/v1/pr-review``.
 
@@ -460,149 +283,3 @@ class PRReviewResponse(BaseModel):
     metrics: ReviewMetrics = Field(description="Time-saved label and cycle sentence.")
     review: PRReviewSummary = Field(description="Combined audit.")
     tool_invocations: list[ToolInvocation] = Field(description="analyze, stub, then risk, in that order.")
-
-
-class TestExecutionInput(BaseModel):
-    """Code pair executed by the isolated test runner.
-
-    Attributes
-    ----------
-    source_code : str
-        Implementation under test, usually from the developer step.
-    test_code : str
-        Assertions from the QA step. They run in the same namespace.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    source_code: str = Field(
-        min_length=1,
-        max_length=20000,
-        description="Implementation under test.",
-    )
-    test_code: str = Field(
-        min_length=1,
-        max_length=20000,
-        description="Assertions that run after the implementation is loaded.",
-    )
-
-
-class TestExecutionResult(BaseModel):
-    """Outcome of one sandbox run.
-
-    Attributes
-    ----------
-    passed : bool
-        True when the test script finishes without an exception.
-    total_tests : int
-        One when the test script was started, otherwise zero.
-    failed_tests : int
-        One when the run failed, otherwise zero.
-    failure_details : list[str]
-        Short failure lines. Empty when the run passed.
-    """
-
-    passed: bool = Field(description="True when the test script finished cleanly.")
-    total_tests: int = Field(ge=0, description="How many test scripts were started.")
-    failed_tests: int = Field(ge=0, description="How many of those scripts failed.")
-    failure_details: list[str] = Field(
-        default_factory=list,
-        description="Short failure lines. Empty when the run passed.",
-    )
-
-
-class AdversarialCycleSummary(BaseModel):
-    """Fixed developer-versus-QA loop result.
-
-    Attributes
-    ----------
-    task : str
-        Feature sentence supplied by the caller.
-    iterations : int
-        How many runner passes the loop performed.
-    initial_flaw_detected : str
-        Failure from the first pass, before the guard was added.
-    final_status : {"Passed", "Failed"}
-        Result of the second pass.
-    generated_edge_cases : list[str]
-        Boundary cases the QA step is aiming at.
-    """
-
-    task: str = Field(description="Feature sentence for this loop.")
-    iterations: int = Field(ge=1, description="Runner passes in this loop.")
-    initial_flaw_detected: str = Field(description="Failure text from the first pass.")
-    final_status: Literal["Passed", "Failed"] = Field(description="Result of the hardened pass.")
-    generated_edge_cases: list[str] = Field(description="Boundary cases named by the QA step.")
-
-
-class LoopIteration(BaseModel):
-    """One pass of the QA script against one implementation.
-
-    Attributes
-    ----------
-    step : int
-        1 is the naive implementation. 2 is the hardened one.
-    role : {"qa_against_naive", "qa_against_hardened"}
-        Which implementation this pass attacked.
-    result : TestExecutionResult
-        Runner output for this pass.
-    """
-
-    step: int = Field(ge=1, description="Pass number, starting at 1.")
-    role: Literal["qa_against_naive", "qa_against_hardened"] = Field(
-        description="Which implementation this pass attacked."
-    )
-    result: TestExecutionResult = Field(description="Runner output for this pass.")
-
-
-class AdversarialReviewRequest(BaseModel):
-    """Body of ``POST /api/v1/adversarial-review``.
-
-    Attributes
-    ----------
-    task : str
-        Sentence stored on the summary. It does not select the snippets.
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-        json_schema_extra={
-            "examples": [
-                {"task": "Implement edge throughput calculation with zero-division safety"}
-            ]
-        },
-    )
-
-    task: str = Field(
-        default="Implement edge throughput calculation with zero-division safety",
-        min_length=1,
-        max_length=2000,
-        description="Feature sentence recorded on the summary. The snippets stay fixed.",
-    )
-
-
-class AdversarialReviewResponse(BaseModel):
-    """Body returned by the developer-versus-QA loop.
-
-    The developer and QA snippets are fixed. Only the runner executes them.
-    ``mode`` stays ``mock`` because no chat provider writes the code.
-
-    Attributes
-    ----------
-    status : {"completed"}
-        Both passes finished.
-    pattern : str
-        Name of the loop, for the screen share.
-    mode : {"mock"}
-        Always mock.
-    summary : AdversarialCycleSummary
-        Flaw, final status, and the named edge cases.
-    runs : list[LoopIteration]
-        First the failing pass, then the hardened pass.
-    """
-
-    status: Literal["completed"] = Field(description="Both passes finished.")
-    pattern: str = Field(description="Name of this feedback loop.")
-    mode: Literal["mock"] = Field(description="The snippets are fixed. The runner is real.")
-    summary: AdversarialCycleSummary = Field(description="Loop summary.")
-    runs: list[LoopIteration] = Field(description="Naive pass, then hardened pass.")

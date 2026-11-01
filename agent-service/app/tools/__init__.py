@@ -1,4 +1,8 @@
-"""Tool registry and the dispatcher that validates arguments before a call."""
+"""Tool registry and the dispatcher that validates arguments before a call.
+
+The registry is built from the skill packages. Each skill publishes one or
+more tools. This module only validates arguments and calls the skill handler.
+"""
 
 import json
 from collections.abc import Callable
@@ -6,26 +10,18 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from app.schemas import (
-    BenchmarkInput,
-    PRReviewInput,
-    RiskScoreInput,
-    TestExecutionInput,
-    ToolError,
-    ToolInvocation,
-)
-from app.tools.metrics_tool import evaluate_edge_config
-from app.tools.test_runner_tool import EXECUTE_TOOL, execute_in_sandbox
-from app.tools.pr_review_tool import (
-    ANALYZE_TOOL,
-    RISK_TOOL,
-    STUB_TOOL,
-    analyze_pr_diff,
-    calculate_review_risk_score,
-    generate_pytest_stub,
-)
+from app.schemas import ToolError, ToolInvocation
+from app.skills.adversarial_review.skill import ADVERSARIAL_REVIEW_SKILL
+from app.skills.base import BaseSkill, ToolBinding
+from app.skills.edge_fps_evaluator.skill import EDGE_FPS_SKILL
+from app.skills.pr_code_reviewer.skill import PR_CODE_REVIEWER_SKILL
 
 TOOL_NAME: str = "evaluate_edge_config"
+SKILLS: tuple[BaseSkill, ...] = (
+    EDGE_FPS_SKILL,
+    PR_CODE_REVIEWER_SKILL,
+    ADVERSARIAL_REVIEW_SKILL,
+)
 
 
 class ToolSpec(dict[str, Any]):
@@ -37,58 +33,25 @@ class ToolSpec(dict[str, Any]):
 
 
 def _build_registry() -> dict[str, ToolSpec]:
-    """Build the process tool registry.
+    """Build the process tool registry from the skill packages.
 
     Returns
     -------
     dict[str, ToolSpec]
         Map of tool name to spec.
     """
-    return {
-        TOOL_NAME: ToolSpec(
-            name=TOOL_NAME,
-            description=(
-                "Estimate FPS and latency for an edge inference config. "
-                "device must be cpu, cuda, or tensorrt. "
-                "Do not invent FPS numbers; return this tool's output."
-            ),
-            input_model=BenchmarkInput,
-            handler=evaluate_edge_config,
-        ),
-        ANALYZE_TOOL: ToolSpec(
-            name=ANALYZE_TOOL,
-            description=(
-                "Scan a pull request diff for missing return annotations, "
-                "broad exception handlers, and TODO or FIXME markers."
-            ),
-            input_model=PRReviewInput,
-            handler=analyze_pr_diff,
-        ),
-        STUB_TOOL: ToolSpec(
-            name=STUB_TOOL,
-            description="Build a deterministic pytest skeleton from the changed file name.",
-            input_model=PRReviewInput,
-            handler=generate_pytest_stub,
-        ),
-        EXECUTE_TOOL: ToolSpec(
-            name=EXECUTE_TOOL,
-            description=(
-                "Run one QA script against one implementation in a fresh namespace. "
-                "Imports and file access are not available."
-            ),
-            input_model=TestExecutionInput,
-            handler=execute_in_sandbox,
-        ),
-        RISK_TOOL: ToolSpec(
-            name=RISK_TOOL,
-            description=(
-                "Score merge risk from analyze_pr_diff issues. "
-                "Low approves. Medium and High request changes."
-            ),
-            input_model=RiskScoreInput,
-            handler=calculate_review_risk_score,
-        ),
-    }
+    registry: dict[str, ToolSpec] = {}
+    skill: BaseSkill
+    for skill in SKILLS:
+        binding: ToolBinding
+        for binding in skill.tools:
+            registry[binding.name] = ToolSpec(
+                name=binding.name,
+                description=binding.description,
+                input_model=binding.input_model,
+                handler=binding.handler,
+            )
+    return registry
 
 
 REGISTRY: dict[str, ToolSpec] = _build_registry()
@@ -103,6 +66,17 @@ def list_tool_names() -> list[str]:
         Tool names the dispatcher accepts.
     """
     return sorted(REGISTRY)
+
+
+def list_skill_names() -> list[str]:
+    """Return skill names in registry order.
+
+    Returns
+    -------
+    list[str]
+        Skill package names, not the individual tool names.
+    """
+    return [skill.name for skill in SKILLS]
 
 
 def openai_tools() -> list[dict[str, Any]]:

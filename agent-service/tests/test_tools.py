@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from app.agent import AgentRunner, extract_json_object, repair_benchmark_arguments
 from app.config import Settings
 from app.schemas import BenchmarkInput, PRReviewInput, RunRequest, ToolError
-from app.tools import TOOL_NAME, dispatch_tool
+from app.tools import SKILLS, TOOL_NAME, dispatch_tool
 from app.tools.metrics_tool import evaluate_edge_config
 from app.tools.pr_review_tool import audit_code_changes
 
@@ -258,3 +258,22 @@ def test_session_window_keeps_only_the_latest_turns() -> None:
         assert stored[1].content == second.result
 
     asyncio.run(scenario())
+
+
+def test_skills_publish_contract_protocol_and_logic() -> None:
+    """Each skill folder exposes a schema, a protocol file, and an execute method.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    names: list[str] = [skill.name for skill in SKILLS]
+    assert names == ["edge_fps_evaluator", "pr_code_reviewer", "adversarial_review"]
+    for skill in SKILLS:
+        assert skill.description
+        assert skill.tools
+        assert skill.instructions()
+    result = SKILLS[0].execute(BenchmarkInput(batch_size=2, device="cuda", target_fps=30))
+    assert result.estimated_fps == 40.0
+    assert "gpu" in SKILLS[0].instructions()

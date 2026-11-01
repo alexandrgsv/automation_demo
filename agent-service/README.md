@@ -11,14 +11,15 @@ Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The
 ```text
 Client
   -> FastAPI                         /health  /api/v1/run  /api/v1/stream  /api/v1/pr-review  /api/v1/adversarial-review
-    -> Pydantic schema validator     RunRequest or PRReviewInput
+    -> Skill contract                schema.py in the skill directory
       -> Agent orchestrator          sliding window, one device repair, mock fallback
-        -> Typed tools               evaluate_edge_config
-                                     analyze_pr_diff
-                                     generate_pytest_stub
-                                     calculate_review_risk_score
-                                     execute_in_sandbox
+        -> Skill                     prompt.md + logic.py
+             edge_fps_evaluator      evaluate_edge_config
+             pr_code_reviewer        analyze_pr_diff, generate_pytest_stub, calculate_review_risk_score
+             adversarial_review      execute_in_sandbox
 ```
+
+A skill is the contract, the protocol, and the function. `schema.py` rejects a bad payload. `prompt.md` says when to call the skill and how a device alias is repaired. `logic.py` is the deterministic function. `app/tools/` is only the registry that dispatches those functions.
 
 `POST /api/v1/adversarial-review` runs two fixed snippets. The first divides by
 duration and fails the QA script with `ZeroDivisionError`. The second rejects a
@@ -42,15 +43,16 @@ A restart clears it. Pass `messages` to replace that window for one call.
 ```text
 agent-service/
 ├── app/
-│   ├── main.py                 # /health, /run, /stream, /pr-review, /adversarial-review
-│   ├── config.py               # Pydantic Settings from .env
-│   ├── schemas.py              # request, response, and tool contracts
-│   ├── agent.py                # dispatch loop, repair, mock fallback
-│   └── tools/
-│       ├── metrics_tool.py     # deterministic FPS estimate
-│       ├── pr_review_tool.py   # diff checks, pytest stub, merge risk
-│       ├── test_runner_tool.py # one QA script in a fresh namespace
-│       └── dual_agent_triage.py # naive pass, then hardened pass
+│   ├── main.py                      # /health, /run, /stream, /pr-review, /adversarial-review
+│   ├── config.py                    # Pydantic Settings from .env
+│   ├── schemas.py                   # HTTP envelopes; re-exports skill contracts
+│   ├── agent.py                     # dispatch loop, applies the skill repair once
+│   ├── skills/
+│   │   ├── base.py                  # name, contract, prompt, repair, execute
+│   │   ├── edge_fps_evaluator/      # schema.py, prompt.md, logic.py
+│   │   ├── pr_code_reviewer/        # schema.py, prompt.md, logic.py
+│   │   └── adversarial_review/      # schema.py, prompt.md, logic.py
+│   └── tools/                       # registry over the skill functions
 ├── tests/
 ├── Dockerfile
 ├── docker-compose.yml

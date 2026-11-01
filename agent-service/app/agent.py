@@ -1,8 +1,9 @@
 """Orchestrator: sliding-window memory, tool retry, and mock fallback.
 
 Mock mode is the default. It runs when ``LLM_API_KEY`` is empty and also when
-a configured provider raises a transport or protocol error. The tool itself
-stays a pure function; repair policy lives here.
+a configured provider raises a transport or protocol error. The FPS function
+stays pure. The device-alias repair is declared on the edge FPS skill, and
+this module applies that repair once.
 """
 
 import json
@@ -24,28 +25,13 @@ from app.schemas import (
     ToolError,
     ToolInvocation,
 )
+from app.skills.edge_fps_evaluator.skill import EDGE_FPS_SKILL
 from app.tools import TOOL_NAME, dispatch_tool, openai_tools
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT: str = (
-    "You check edge inference configs. "
-    "Call evaluate_edge_config with batch_size, device, and target_fps. "
-    "device must be exactly cpu, cuda, or tensorrt. "
-    "Do not invent FPS or latency. Use the tool output. "
-    "If the tool returns a validation error, correct the arguments and call it once more. "
-    "Then answer in two sentences: the estimated FPS and whether the target is met."
-)
-
-# Common names a caller might use before the schema's exact tokens.
-_DEVICE_ALIASES: dict[str, str] = {
-    "gpu": "cuda",
-    "nvidia": "cuda",
-    "cuda:0": "cuda",
-    "trt": "tensorrt",
-    "tensor-rt": "tensorrt",
-}
-_ALLOWED_DEVICES: frozenset[str] = frozenset({"cpu", "cuda", "tensorrt"})
+# The protocol file in the skill directory is the source of this prompt.
+SYSTEM_PROMPT: str = EDGE_FPS_SKILL.instructions()
 
 
 class LLMUnavailable(Exception):
@@ -201,11 +187,11 @@ def repair_benchmark_arguments(
     arguments: dict[str, Any],
     error: ToolError,
 ) -> dict[str, Any] | None:
-    """Rewrite a failed ``evaluate_edge_config`` call once.
+    """Apply the edge FPS skill's one-step device repair.
 
-    Only the device string is rewritten, and only onto ``cpu``, ``cuda``, or
-    ``tensorrt``. Batch size and target FPS are left alone so a bad number is
-    reported instead of being clamped in silence.
+    The alias table lives on the skill. Only the device string is rewritten,
+    and only onto ``cpu``, ``cuda``, or ``tensorrt``. Batch size and target
+    FPS are left alone so a bad number is reported instead of being clamped.
 
     Parameters
     ----------
@@ -219,20 +205,7 @@ def repair_benchmark_arguments(
     dict[str, Any] | None
         A new argument dict, or None when this policy cannot repair the call.
     """
-    if error.type != "validation_error":
-        return None
-    device: Any = arguments.get("device")
-    if not isinstance(device, str):
-        return None
-    lowered: str = device.strip().lower()
-    canonical: str | None = _DEVICE_ALIASES.get(lowered)
-    if canonical is None and lowered in _ALLOWED_DEVICES:
-        canonical = lowered
-    if canonical is None or canonical == device:
-        return None
-    repaired: dict[str, Any] = dict(arguments)
-    repaired["device"] = canonical
-    return repaired
+    return EDGE_FPS_SKILL.repair_arguments(arguments, error)
 
 
 def summarize_invocations(

@@ -101,7 +101,9 @@ def write_comment(body: str) -> None:
 def main() -> None:
     """Read the pull-request diff and write the review comment.
 
-    An empty diff still writes a short comment so the workflow can post it.
+    An empty diff still writes a short comment and exits 0. A diff that the
+    audit refuses to auto-merge exits 1 after the comment file is written, so
+    the GitHub check fails while the comment step can still publish it.
     """
     pr_id: int = int(os.getenv("PR_NUMBER", "1"))
     base_ref: str = os.getenv("BASE_REF", "main")
@@ -119,6 +121,12 @@ def main() -> None:
     report: PRReviewResponse = audit_code_changes(payload)
     write_comment(render_comment(report))
     print(f"Wrote {_COMMENT_PATH}")
+    if not report.review.can_auto_merge:
+        print(
+            f"Review requested changes (risk {report.review.risk_level}).",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

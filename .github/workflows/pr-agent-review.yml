@@ -31,6 +31,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r agent-service/requirements.txt
 
+      # The script exits 1 when the audit requests changes. The comment step still runs.
       - name: Run PR Review Agent
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}

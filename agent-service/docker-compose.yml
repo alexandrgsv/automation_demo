@@ -1,0 +1,18 @@
+# Local demo. From this directory: cp .env.example .env && docker compose up --build
+services:
+  agent-service:
+    build: .
+    container_name: agent-service
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=local
+      - PORT=8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

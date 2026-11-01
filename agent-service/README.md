@@ -1,8 +1,8 @@
 # Edge Agent Service
 
-Small FastAPI service that checks an edge inference config through one typed tool.
-No GPU and no API key are required. An empty `LLM_API_KEY` keeps the orchestrator
-in mock mode and still returns the deterministic estimate.
+Small FastAPI service with two deterministic demos: an edge-config FPS check
+and a PR diff audit. No GPU and no API key are required. An empty `LLM_API_KEY`
+keeps both paths on fixed rules.
 
 Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The service root redirects there.
 
@@ -10,12 +10,18 @@ Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The
 
 ```text
 Client
-  -> FastAPI                         /health  /api/v1/run  /api/v1/stream
-    -> Pydantic schema validator     RunRequest, then BenchmarkInput
+  -> FastAPI                         /health  /api/v1/run  /api/v1/stream  /api/v1/pr-review
+    -> Pydantic schema validator     RunRequest or PRReviewInput
       -> Agent orchestrator          sliding window, one device repair, mock fallback
-        -> Typed tool                evaluate_edge_config
-          -> Deterministic benchmark stand-in for the edge runtime
+        -> Typed tools               evaluate_edge_config
+                                     analyze_pr_diff
+                                     generate_pytest_stub
+                                     calculate_review_risk_score
 ```
+
+`POST /api/v1/pr-review` always runs the three review tools in that order.
+Zero issues is Low and `approve`. One issue is Medium. Two or more is High.
+Medium and High both return `request_changes`. The saved-time figure is fixed at 45 minutes.
 
 `POST /api/v1/run` returns HTTP 422 when the body is not a `RunRequest`.
 A body whose `tool_arguments` fail `BenchmarkInput` still returns HTTP 200.
@@ -30,12 +36,13 @@ A restart clears it. Pass `messages` to replace that window for one call.
 ```text
 agent-service/
 ├── app/
-│   ├── main.py                 # /health, /api/v1/run, /api/v1/stream
+│   ├── main.py                 # /health, /api/v1/run, /api/v1/stream, /api/v1/pr-review
 │   ├── config.py               # Pydantic Settings from .env
 │   ├── schemas.py              # request, response, and tool contracts
 │   ├── agent.py                # dispatch loop, repair, mock fallback
 │   └── tools/
-│       └── metrics_tool.py     # deterministic FPS estimate
+│       ├── metrics_tool.py     # deterministic FPS estimate
+│       └── pr_review_tool.py   # diff checks, pytest stub, merge risk
 ├── tests/
 ├── Dockerfile
 ├── docker-compose.yml
@@ -132,9 +139,26 @@ curl -s http://localhost:8000/api/v1/run \
 
 `POST /api/v1/stream` emits the same turn as `text/event-stream` events named `step`, `tool`, and `result`.
 
+## PR triage sample
+
+```bash
+curl -s http://localhost:8000/api/v1/pr-review \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pr_id": 42,
+    "file_path": "app/agent.py",
+    "diff_content": "def run(data):\n    try:\n        return data\n    except:\n        pass\n# TODO: narrow the handler\n"
+  }'
+```
+
+The audit reports High risk, `can_auto_merge: false`, and these test names:
+`test_agent_edge_cases`, `test_agent_invalid_schema_handling`.
+Checks, in order: a `def` with no `->` anywhere in the text, a bare `except:` or `except Exception`, then `TODO` or `FIXME`.
+
 ## What the trace is for
 
 - One HTTP call replaces a manual pass over batch size, device, and target FPS.
+- One HTTP call runs the diff checks, the pytest stub, and the merge score.
 - Tool arguments are checked with `model_validate` before the function runs.
 - A validation failure is data in the response, not an unhandled exception.
 - Mock mode is the fallback when the key is missing or the provider call fails, so the demo does not depend on an external balance.

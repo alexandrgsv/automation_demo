@@ -15,8 +15,9 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from app import __version__
 from app.agent import AgentRunner
 from app.config import Settings, get_settings
-from app.schemas import AgentEvent, AgentResponse, HealthResponse, RunRequest
+from app.schemas import AgentEvent, AgentResponse, HealthResponse, PRReviewInput, PRReviewResponse, RunRequest
 from app.tools import list_tool_names
+from app.tools.pr_review_tool import audit_code_changes
 
 
 def configure_logging(level: str) -> None:
@@ -93,9 +94,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="Edge Agent Service",
         version=__version__,
         description=(
-            "Typed tool-calling loop for an edge inference config check. "
+            "Typed tool-calling loop for an edge inference config check, "
+            "plus a deterministic PR diff audit. "
             "Invalid tool arguments come back inside the agent response. "
-            "An empty LLM_API_KEY keeps the demo on the deterministic mock runner."
+            "An empty LLM_API_KEY keeps both demos on fixed rules."
         ),
         lifespan=lifespan,
     )
@@ -190,6 +192,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @application.post("/api/v1/pr-review", response_model=PRReviewResponse, tags=["review"])
+    async def review_pr(payload: PRReviewInput) -> PRReviewResponse:
+        """Audit a diff, draft pytest names, and score the merge risk.
+
+        The route always runs the deterministic tools. A body that fails
+        :class:`app.schemas.PRReviewInput` is HTTP 422.
+
+        Parameters
+        ----------
+        payload : PRReviewInput
+            Pull request id, file path, and diff text.
+
+        Returns
+        -------
+        PRReviewResponse
+            Risk, findings, test names, and the three tool traces.
+        """
+        return audit_code_changes(payload)
 
     return application
 

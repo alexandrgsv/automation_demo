@@ -43,7 +43,12 @@ def test_health_reports_the_mock_worker(client: TestClient) -> None:
     assert body["environment"] == "test"
     assert body["llm_mode"] == "mock"
     assert body["workers_ready"] is True
-    assert body["registered_tools"] == ["evaluate_edge_config"]
+    assert body["registered_tools"] == [
+        "analyze_pr_diff",
+        "calculate_review_risk_score",
+        "evaluate_edge_config",
+        "generate_pytest_stub",
+    ]
 
 
 def test_root_redirects_to_the_docs(client: TestClient) -> None:
@@ -230,3 +235,114 @@ def test_stream_emits_tool_and_result_events(client: TestClient) -> None:
     assert "event: tool" in response.text
     assert "event: result" in response.text
     assert "40.0" in response.text
+
+
+def test_pr_review_returns_a_high_risk_audit(client: TestClient) -> None:
+    """Flag a bare except, a missing annotation, and a TODO as High risk.
+
+    Parameters
+    ----------
+    client : TestClient
+        Mock-mode application client.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    response = client.post(
+        "/api/v1/pr-review",
+        json={
+            "pr_id": 42,
+            "file_path": "app/agent.py",
+            "diff_content": (
+                "def run(data):\n"
+                "    try:\n"
+                "        return data\n"
+                "    except:\n"
+                "        pass\n"
+                "# TODO: narrow the handler\n"
+            ),
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["mode"] == "mock"
+    assert body["pr_id"] == 42
+    assert body["metrics"]["estimated_time_saved"] == "45 min"
+    assert body["metrics"]["cycle_reduction"] == "From 3-day backlog to 1-day turnaround"
+    assert body["review"]["risk_level"] == "High"
+    assert body["review"]["can_auto_merge"] is False
+    assert body["review"]["recommendation"] == "request_changes"
+    assert body["review"]["review_time_saved_minutes"] == 45
+    assert body["review"]["suggested_tests"] == [
+        "test_agent_edge_cases",
+        "test_agent_invalid_schema_handling",
+    ]
+    assert len(body["review"]["detected_issues"]) == 3
+    assert [item["tool_name"] for item in body["tool_invocations"]] == [
+        "analyze_pr_diff",
+        "generate_pytest_stub",
+        "calculate_review_risk_score",
+    ]
+    assert all(item["ok"] is True for item in body["tool_invocations"])
+
+
+def test_pr_review_approves_a_typed_function(client: TestClient) -> None:
+    """Approve a diff that already has a return annotation and a narrow handler.
+
+    Parameters
+    ----------
+    client : TestClient
+        Mock-mode application client.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    response = client.post(
+        "/api/v1/pr-review",
+        json={
+            "pr_id": 7,
+            "file_path": "app/tools/metrics_tool.py",
+            "diff_content": (
+                "def score(value: int) -> int:\n"
+                "    try:\n"
+                "        return value\n"
+                "    except ValueError:\n"
+                "        return 0\n"
+            ),
+        },
+    )
+    assert response.status_code == 200
+    review = response.json()["review"]
+    assert review["risk_level"] == "Low"
+    assert review["detected_issues"] == []
+    assert review["can_auto_merge"] is True
+    assert review["recommendation"] == "approve"
+    assert review["suggested_tests"] == [
+        "test_metrics_tool_edge_cases",
+        "test_metrics_tool_invalid_schema_handling",
+    ]
+
+
+def test_pr_review_rejects_a_non_positive_id(client: TestClient) -> None:
+    """Reject a pull request id of zero before the tools run.
+
+    Parameters
+    ----------
+    client : TestClient
+        Mock-mode application client.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    response = client.post(
+        "/api/v1/pr-review",
+        json={"pr_id": 0, "file_path": "app/agent.py", "diff_content": "def run() -> None:\n    return\n"},
+    )
+    assert response.status_code == 422

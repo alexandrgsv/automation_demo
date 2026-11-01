@@ -6,8 +6,16 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from app.schemas import BenchmarkInput, ToolError, ToolInvocation
+from app.schemas import BenchmarkInput, PRReviewInput, RiskScoreInput, ToolError, ToolInvocation
 from app.tools.metrics_tool import evaluate_edge_config
+from app.tools.pr_review_tool import (
+    ANALYZE_TOOL,
+    RISK_TOOL,
+    STUB_TOOL,
+    analyze_pr_diff,
+    calculate_review_risk_score,
+    generate_pytest_stub,
+)
 
 TOOL_NAME: str = "evaluate_edge_config"
 
@@ -26,19 +34,44 @@ def _build_registry() -> dict[str, ToolSpec]:
     Returns
     -------
     dict[str, ToolSpec]
-        Map of tool name to spec. The demo ships with one tool.
+        Map of tool name to spec.
     """
-    spec = ToolSpec(
-        name=TOOL_NAME,
-        description=(
-            "Estimate FPS and latency for an edge inference config. "
-            "device must be cpu, cuda, or tensorrt. "
-            "Do not invent FPS numbers; return this tool's output."
+    return {
+        TOOL_NAME: ToolSpec(
+            name=TOOL_NAME,
+            description=(
+                "Estimate FPS and latency for an edge inference config. "
+                "device must be cpu, cuda, or tensorrt. "
+                "Do not invent FPS numbers; return this tool's output."
+            ),
+            input_model=BenchmarkInput,
+            handler=evaluate_edge_config,
         ),
-        input_model=BenchmarkInput,
-        handler=evaluate_edge_config,
-    )
-    return {TOOL_NAME: spec}
+        ANALYZE_TOOL: ToolSpec(
+            name=ANALYZE_TOOL,
+            description=(
+                "Scan a pull request diff for missing return annotations, "
+                "broad exception handlers, and TODO or FIXME markers."
+            ),
+            input_model=PRReviewInput,
+            handler=analyze_pr_diff,
+        ),
+        STUB_TOOL: ToolSpec(
+            name=STUB_TOOL,
+            description="Build a deterministic pytest skeleton from the changed file name.",
+            input_model=PRReviewInput,
+            handler=generate_pytest_stub,
+        ),
+        RISK_TOOL: ToolSpec(
+            name=RISK_TOOL,
+            description=(
+                "Score merge risk from analyze_pr_diff issues. "
+                "Low approves. Medium and High request changes."
+            ),
+            input_model=RiskScoreInput,
+            handler=calculate_review_risk_score,
+        ),
+    }
 
 
 REGISTRY: dict[str, ToolSpec] = _build_registry()

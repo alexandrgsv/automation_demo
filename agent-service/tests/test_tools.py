@@ -7,9 +7,10 @@ from pydantic import ValidationError
 
 from app.agent import AgentRunner, extract_json_object, repair_benchmark_arguments
 from app.config import Settings
-from app.schemas import BenchmarkInput, RunRequest, ToolError
+from app.schemas import BenchmarkInput, PRReviewInput, RunRequest, ToolError
 from app.tools import TOOL_NAME, dispatch_tool
 from app.tools.metrics_tool import evaluate_edge_config
+from app.tools.pr_review_tool import audit_code_changes
 
 
 def test_benchmark_input_rejects_bad_device_and_batch() -> None:
@@ -200,6 +201,37 @@ def test_provider_failure_falls_back_to_mock() -> None:
         assert "40.0 FPS" in response.result
 
     asyncio.run(scenario())
+
+
+def test_one_issue_is_medium_and_two_issues_are_high() -> None:
+    """Score one finding as Medium and two findings as High.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    medium = audit_code_changes(
+        PRReviewInput(
+            pr_id=1,
+            file_path="app/agent.py",
+            diff_content="def run(data: int) -> int:\n    return data\n# TODO: explain the cast\n",
+        )
+    )
+    assert medium.review.risk_level == "Medium"
+    assert medium.review.recommendation == "request_changes"
+    assert medium.review.detected_issues == ["Unresolved TODO/FIXME markers in production diff"]
+
+    high = audit_code_changes(
+        PRReviewInput(
+            pr_id=2,
+            file_path="app/agent.py",
+            diff_content="def run(data):\n    try:\n        return data\n    except Exception as exc:\n        raise\n",
+        )
+    )
+    assert high.review.risk_level == "High"
+    assert "Missing return type annotations in modified functions" in high.review.detected_issues
+    assert "Broad exception handling detected; specify exact exception types" in high.review.detected_issues
 
 
 def test_session_window_keeps_only_the_latest_turns() -> None:

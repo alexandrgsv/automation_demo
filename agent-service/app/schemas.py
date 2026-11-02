@@ -10,6 +10,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.skills.algorithm_deployer.schema import (
+    AlgorithmDeployRequest,
+    AlgorithmDeployResponse,
+    DeployAlgorithmInput,
+    PortainerDeployResult,
+    RetrieveAlgorithmInput,
+    RetrieveAlgorithmResult,
+)
 from app.skills.adversarial_review.schema import (
     AdversarialCycleSummary,
     AdversarialReviewRequest,
@@ -30,6 +38,8 @@ from app.skills.pr_code_reviewer.schema import (
 )
 
 __all__ = [
+    "AlgorithmDeployRequest",
+    "AlgorithmDeployResponse",
     "AdversarialCycleSummary",
     "AdversarialReviewRequest",
     "AdversarialReviewResponse",
@@ -37,14 +47,18 @@ __all__ = [
     "AgentResponse",
     "BenchmarkInput",
     "ChatMessage",
+    "DeployAlgorithmInput",
     "DiffAnalysis",
     "EdgeBenchmarkResult",
     "HealthResponse",
     "LoopIteration",
+    "PortainerDeployResult",
     "PRReviewInput",
     "PRReviewResponse",
     "PRReviewSummary",
     "PytestStub",
+    "RetrieveAlgorithmInput",
+    "RetrieveAlgorithmResult",
     "ReviewMetrics",
     "RiskScore",
     "RiskScoreInput",

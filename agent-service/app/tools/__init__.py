@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.schemas import ToolError, ToolInvocation
 from app.skills.adversarial_review.skill import ADVERSARIAL_REVIEW_SKILL
+from app.skills.algorithm_deployer.skill import ALGORITHM_DEPLOYER_SKILL
 from app.skills.base import BaseSkill, ToolBinding
 from app.skills.edge_fps_evaluator.skill import EDGE_FPS_SKILL
 from app.skills.pr_code_reviewer.skill import PR_CODE_REVIEWER_SKILL
@@ -21,6 +22,7 @@ SKILLS: tuple[BaseSkill, ...] = (
     EDGE_FPS_SKILL,
     PR_CODE_REVIEWER_SKILL,
     ADVERSARIAL_REVIEW_SKILL,
+    ALGORITHM_DEPLOYER_SKILL,
 )
 
 

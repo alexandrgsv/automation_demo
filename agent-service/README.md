@@ -1,8 +1,9 @@
 # Edge Agent Service
 
-Small FastAPI service with three deterministic demos: an edge-config FPS check,
-a PR diff audit, and a developer-versus-QA loop. No GPU and no API key are
-required. An empty `LLM_API_KEY` keeps every path on fixed rules.
+Small FastAPI service with four deterministic demos: an edge-config FPS check,
+a PR diff audit, a developer-versus-QA loop, and a sample algorithm deploy.
+No GPU and no API key are required. An empty `LLM_API_KEY` keeps the chat path
+on fixed rules. An empty Portainer URL or API key skips the stack create call.
 
 Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The service root redirects there.
 
@@ -10,16 +11,19 @@ Open [http://localhost:8000/docs](http://localhost:8000/docs) after startup. The
 
 ```text
 Client
-  -> FastAPI                         /health  /api/v1/run  /api/v1/stream  /api/v1/pr-review  /api/v1/adversarial-review
+  -> FastAPI                         /health  /api/v1/run  /api/v1/stream  /api/v1/pr-review  /api/v1/adversarial-review  /api/v1/deploy-algorithm
     -> Skill contract                schema.py in the skill directory
       -> Agent orchestrator          sliding window, one device repair, mock fallback
         -> Skill                     prompt.md + logic.py
              edge_fps_evaluator      evaluate_edge_config
              pr_code_reviewer        analyze_pr_diff, generate_pytest_stub, calculate_review_risk_score
              adversarial_review      execute_in_sandbox
+             algorithm_deployer      retrieve_algorithm_config, deploy_algorithm_stack
 ```
 
 A skill is the contract, the protocol, and the function. `schema.py` rejects a bad payload. `prompt.md` says when to call the skill and how a device alias is repaired. `logic.py` is the deterministic function. `app/tools/` is only the registry that dispatches those functions.
+
+`POST /api/v1/deploy-algorithm` scores the sentence against three JSON documents in `app/skills/algorithm_deployer/knowledge/`. Matching is phrase overlap, not an embedding index. The documents are sample line crossing, sample person presence in a sales-floor zone, and a sample movement heatmap. A sentence that matches nothing does not create a stack. The selected file supplies the coordinates and the stack name. When `PORTAINER_URL` and `PORTAINER_API_KEY` are both set, the service sends `POST /api/stacks/create/standalone/string?endpointId=` with header `X-API-Key`. The image name `demo/sample-algorithm:local` is a label in the sample compose. It is not a published product image.
 
 `POST /api/v1/adversarial-review` runs two fixed snippets. The first divides by
 duration and fails the QA script with `ZeroDivisionError`. The second rejects a
@@ -51,7 +55,8 @@ agent-service/
 │   │   ├── base.py                  # name, contract, prompt, repair, execute
 │   │   ├── edge_fps_evaluator/      # schema.py, prompt.md, logic.py
 │   │   ├── pr_code_reviewer/        # schema.py, prompt.md, logic.py
-│   │   └── adversarial_review/      # schema.py, prompt.md, logic.py
+│   │   ├── adversarial_review/      # schema.py, prompt.md, logic.py
+│   │   └── algorithm_deployer/      # knowledge/*.json, schema.py, logic.py
 │   └── tools/                       # registry over the skill functions
 ├── tests/
 ├── Dockerfile
@@ -174,6 +179,16 @@ curl -s http://localhost:8000/api/v1/adversarial-review \
 ```
 
 `runs[0]` fails with `ZeroDivisionError`. `runs[1]` passes. `final_status` is `Passed`.
+
+## Sample algorithm deploy
+
+```bash
+curl -s http://localhost:8000/api/v1/deploy-algorithm \
+  -H 'Content-Type: application/json' \
+  -d '{"request":"Продеплой детекцию пересечения линии на входе"}'
+```
+
+With an empty Portainer URL the status is `mock`, `algorithm_id` is `line_crossing`, and `portainer.deployed` is false. The other two sentences are "нахождение человека в зоне торгового зала" and "хитмап перемещений человека". "Deploy a postgres database" returns `no_match` and does not build a stack.
 
 ## What the trace is for
 

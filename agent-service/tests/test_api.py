@@ -46,9 +46,11 @@ def test_health_reports_the_mock_worker(client: TestClient) -> None:
     assert body["registered_tools"] == [
         "analyze_pr_diff",
         "calculate_review_risk_score",
+        "deploy_algorithm_stack",
         "evaluate_edge_config",
         "execute_in_sandbox",
         "generate_pytest_stub",
+        "retrieve_algorithm_config",
     ]
 
 
@@ -395,3 +397,57 @@ def test_sandbox_reports_a_blocked_import() -> None:
     assert result.passed is False
     assert result.total_tests == 0
     assert result.failure_details
+
+
+def test_deploy_algorithm_selects_line_crossing_without_portainer(client: TestClient) -> None:
+    """Pick the line-crossing sample and skip the Portainer call.
+
+    Parameters
+    ----------
+    client : TestClient
+        Mock-mode application client. Portainer settings stay empty.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    response = client.post(
+        "/api/v1/deploy-algorithm",
+        json={"request": "Продеплой детекцию пересечения линии на входе"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "mock"
+    assert body["algorithm_id"] == "line_crossing"
+    assert body["config"]["direction"] == "in_out"
+    assert body["config"]["camera_id"] == "cam-entrance-sample"
+    assert body["portainer"]["deployed"] is False
+    assert body["portainer"]["stack_id"] is None
+    assert "sample-line-crossing" in body["compose"]
+    assert "demo/sample-algorithm:local" in body["compose"]
+
+
+def test_deploy_algorithm_reports_no_match(client: TestClient) -> None:
+    """Leave the stack uncreated when no sample phrase matches.
+
+    Parameters
+    ----------
+    client : TestClient
+        Mock-mode application client.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    response = client.post(
+        "/api/v1/deploy-algorithm",
+        json={"request": "Deploy a postgres database"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "no_match"
+    assert body["algorithm_id"] is None
+    assert body["compose"] is None
+    assert body["portainer"] is None

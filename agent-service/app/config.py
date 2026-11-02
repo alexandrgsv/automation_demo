@@ -34,6 +34,14 @@ class Settings(BaseSettings):
         Maximum chat completions per turn when a key is configured.
     memory_window : int
         Maximum chat messages kept per session.
+    portainer_url : str
+        Portainer origin, without ``/api``. Blank selects mock deploy.
+    portainer_api_key : str
+        Portainer API key sent as ``X-API-Key``. Blank selects mock deploy.
+    portainer_endpoint_id : int
+        Default environment id used when a request omits ``endpoint_id``.
+    portainer_timeout_s : float
+        Timeout for the stack create call.
     """
 
     model_config = SettingsConfigDict(
@@ -61,6 +69,24 @@ class Settings(BaseSettings):
         ge=1,
         le=100,
         description="How many chat messages to keep for one session.",
+    )
+    portainer_url: str = Field(
+        default="",
+        description="Portainer origin without /api. Empty selects mock deploy.",
+    )
+    portainer_api_key: str = Field(
+        default="",
+        description="Portainer API key. Empty selects mock deploy.",
+    )
+    portainer_endpoint_id: int = Field(
+        default=1,
+        ge=1,
+        description="Default Portainer endpoint id.",
+    )
+    portainer_timeout_s: float = Field(
+        default=10.0,
+        gt=0,
+        description="Portainer request timeout in seconds.",
     )
 
     @property

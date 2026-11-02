@@ -1,0 +1,26 @@
+{
+  "algorithm_id": "movement_heatmap",
+  "title": "Human movement heatmap",
+  "summary": "Sample grid that accumulates human movement over a short window.",
+  "notice": "Demonstrative sample config. Not a production algorithm package.",
+  "sample": true,
+  "phrases": [
+    "heatmap",
+    "heat map",
+    "movement heatmap",
+    "хитмап",
+    "тепловая карта",
+    "тепловую карту",
+    "перемещений человека",
+    "перемещения человека"
+  ],
+  "stack_name": "sample-movement-heatmap",
+  "image": "demo/sample-algorithm:local",
+  "config": {
+    "camera_id": "cam-floor-sample",
+    "grid_columns": 32,
+    "grid_rows": 18,
+    "window_sec": 300,
+    "min_confidence": 0.35
+  }
+}

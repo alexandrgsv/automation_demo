@@ -1,0 +1,31 @@
+{
+  "algorithm_id": "zone_presence",
+  "title": "Person presence in a sales-floor zone",
+  "summary": "Sample check that a person is inside a polygon on the sales floor.",
+  "notice": "Demonstrative sample config. Not a production algorithm package.",
+  "sample": true,
+  "phrases": [
+    "zone presence",
+    "person in zone",
+    "person in a zone",
+    "sales floor",
+    "торговом зале",
+    "торгового зала",
+    "нахождение человека",
+    "нахождении человека",
+    "в зоне"
+  ],
+  "stack_name": "sample-zone-presence",
+  "image": "demo/sample-algorithm:local",
+  "config": {
+    "camera_id": "cam-floor-sample",
+    "zone": [
+      {"x": 0.2, "y": 0.25},
+      {"x": 0.8, "y": 0.25},
+      {"x": 0.8, "y": 0.85},
+      {"x": 0.2, "y": 0.85}
+    ],
+    "min_dwell_sec": 2.0,
+    "min_confidence": 0.45
+  }
+}

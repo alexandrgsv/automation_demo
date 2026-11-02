@@ -20,11 +20,14 @@ from app.schemas import (
     AdversarialReviewResponse,
     AgentEvent,
     AgentResponse,
+    AlgorithmDeployRequest,
+    AlgorithmDeployResponse,
     HealthResponse,
     PRReviewInput,
     PRReviewResponse,
     RunRequest,
 )
+from app.skills.algorithm_deployer.logic import deploy_from_request
 from app.tools import list_tool_names
 from app.tools.dual_agent_triage import run_adversarial_dev_loop
 from app.tools.pr_review_tool import audit_code_changes
@@ -105,9 +108,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         description=(
             "Typed tool-calling loop for an edge inference config check, "
-            "plus a deterministic PR diff audit and a developer-versus-QA loop. "
+            "a deterministic PR diff audit, a developer-versus-QA loop, "
+            "and a sample algorithm deploy that picks a config from three documents. "
             "Invalid tool arguments come back inside the agent response. "
-            "An empty LLM_API_KEY keeps these demos on fixed rules."
+            "An empty LLM_API_KEY keeps the chat path on fixed rules. "
+            "An empty Portainer URL or API key skips the stack create call."
         ),
         lifespan=lifespan,
     )
@@ -246,6 +251,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             First failure, second pass, and the named edge cases.
         """
         return run_adversarial_dev_loop(payload.task)
+
+    @application.post(
+        "/api/v1/deploy-algorithm",
+        response_model=AlgorithmDeployResponse,
+        tags=["deploy"],
+    )
+    async def deploy_algorithm(payload: AlgorithmDeployRequest) -> AlgorithmDeployResponse:
+        """Match a sentence to one sample algorithm and create its Portainer stack.
+
+        The config comes from the matching knowledge file. A sentence that
+        matches nothing does not call Portainer. A blank Portainer URL or API
+        key returns the compose and does not send HTTP.
+
+        Parameters
+        ----------
+        payload : AlgorithmDeployRequest
+            Deployment sentence and an optional endpoint id.
+
+        Returns
+        -------
+        AlgorithmDeployResponse
+            Retrieval scores, the selected config, and the Portainer outcome.
+        """
+        active_settings: Settings = application.state.settings
+        return deploy_from_request(payload, active_settings)
 
     return application
 

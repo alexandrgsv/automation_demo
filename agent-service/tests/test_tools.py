@@ -269,7 +269,12 @@ def test_skills_publish_contract_protocol_and_logic() -> None:
         The test passes by assertion.
     """
     names: list[str] = [skill.name for skill in SKILLS]
-    assert names == ["edge_fps_evaluator", "pr_code_reviewer", "adversarial_review"]
+    assert names == [
+        "edge_fps_evaluator",
+        "pr_code_reviewer",
+        "adversarial_review",
+        "algorithm_deployer",
+    ]
     for skill in SKILLS:
         assert skill.description
         assert skill.tools
@@ -277,3 +282,103 @@ def test_skills_publish_contract_protocol_and_logic() -> None:
     result = SKILLS[0].execute(BenchmarkInput(batch_size=2, device="cuda", target_fps=30))
     assert result.estimated_fps == 40.0
     assert "gpu" in SKILLS[0].instructions()
+
+
+def test_algorithm_retrieval_picks_the_named_sample() -> None:
+    """Map three demo sentences onto the three sample documents.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    from app.skills.algorithm_deployer.logic import retrieve_algorithm
+
+    line = retrieve_algorithm("Продеплой детекцию пересечения линии на входе")
+    zone = retrieve_algorithm("Нужно видеть нахождение человека в зоне торгового зала")
+    heat = retrieve_algorithm("Собери хитмап перемещений человека")
+    assert line.selected is not None and line.selected.algorithm_id == "line_crossing"
+    assert zone.selected is not None and zone.selected.algorithm_id == "zone_presence"
+    assert heat.selected is not None and heat.selected.algorithm_id == "movement_heatmap"
+    assert heat.selected.document == "movement_heatmap.json"
+
+
+def test_portainer_create_uses_the_sample_stack_and_hides_the_key() -> None:
+    """Post the corpus config and keep the API key out of the result.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    import json
+
+    import httpx
+
+    from app.skills.algorithm_deployer.logic import deploy_from_request
+    from app.skills.algorithm_deployer.schema import AlgorithmDeployRequest
+
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["endpoint"] = request.url.params.get("endpointId")
+        seen["key"] = request.headers.get("X-API-Key")
+        seen["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"Id": 17, "Name": "sample-zone-presence"})
+
+    settings = Settings(
+        llm_api_key="",
+        portainer_url="http://portainer.internal:9000",
+        portainer_api_key="demo-key",
+        portainer_endpoint_id=4,
+    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        outcome = deploy_from_request(
+            AlgorithmDeployRequest(request="person in zone on the sales floor"),
+            settings,
+            client=http,
+        )
+    dumped = outcome.model_dump_json()
+    assert outcome.status == "deployed"
+    assert outcome.portainer is not None
+    assert outcome.portainer.stack_id == 17
+    assert outcome.algorithm_id == "zone_presence"
+    assert seen["path"] == "/api/stacks/create/standalone/string"
+    assert seen["endpoint"] == "4"
+    assert seen["key"] == "demo-key"
+    assert seen["body"]["name"] == "sample-zone-presence"  # type: ignore[index]
+    assert "demo-key" not in dumped
+
+
+def test_portainer_transport_error_stays_in_the_result() -> None:
+    """Report a connection failure without raising it to the caller.
+
+    Returns
+    -------
+    None
+        The test passes by assertion.
+    """
+    import httpx
+
+    from app.skills.algorithm_deployer.logic import deploy_from_request
+    from app.skills.algorithm_deployer.schema import AlgorithmDeployRequest
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    settings = Settings(
+        llm_api_key="",
+        portainer_url="http://portainer.internal:9000",
+        portainer_api_key="demo-key",
+    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        outcome = deploy_from_request(
+            AlgorithmDeployRequest(request="heatmap of movement"),
+            settings,
+            client=http,
+        )
+    assert outcome.status == "deploy_failed"
+    assert outcome.portainer is not None
+    assert outcome.portainer.deployed is False
+    assert "ConnectError" in outcome.portainer.message

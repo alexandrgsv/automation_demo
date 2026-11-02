@@ -1,0 +1,27 @@
+{
+  "algorithm_id": "line_crossing",
+  "title": "Line crossing detection",
+  "summary": "Sample count of people who cross a virtual line at a store entrance.",
+  "notice": "Demonstrative sample config. Not a production algorithm package.",
+  "sample": true,
+  "phrases": [
+    "line crossing",
+    "line-crossing",
+    "cross the line",
+    "virtual line",
+    "пересечение линии",
+    "пересечения линии",
+    "пересечении линии",
+    "пересечь линию"
+  ],
+  "stack_name": "sample-line-crossing",
+  "image": "demo/sample-algorithm:local",
+  "config": {
+    "camera_id": "cam-entrance-sample",
+    "line_start": {"x": 0.15, "y": 0.62},
+    "line_end": {"x": 0.84, "y": 0.62},
+    "direction": "in_out",
+    "min_confidence": 0.4,
+    "min_track_frames": 3
+  }
+}

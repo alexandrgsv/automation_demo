@@ -1,0 +1,43 @@
+# Computer Vision Team Policy
+
+This is a template. Adapt it to the project and save it as AGENTS.md at the project root. This filename does not activate project instructions by itself.
+
+## Team workflow
+
+- Use the agreed release of the team skills. Record the selected release and model in the project's contributor documentation or tooling configuration; this document does not configure the model.
+- Apply cv-plan for substantial planning, cv-analyze for investigations, cv-develop for implementation, and cv-test for independent validation when those skills are installed.
+- Inspect the implementation and callers before changing behavior. Keep changes within the requested scope and preserve public contracts unless the task calls for changing them.
+- Ask about missing acceptance decisions only when they materially affect correctness or scope. Continue independent work while waiting when possible.
+
+## Project facts to maintain
+
+The project owner should document the following concrete values here before adopting this policy:
+
+- Environment setup and supported Python/framework/runtime versions.
+- Build, lint, unit-test, integration-test, and evaluation commands.
+- Target hardware and inference runtime; expected resolution, concurrency, latency, and memory limits.
+- Model registry/artifact locations, dataset versions, annotation schema, class map, and split protocol.
+- Acceptance metrics and thresholds, including important classes and deployment slices.
+
+Until these values exist, inspect project configuration and CI for evidence. Report unknowns instead of inventing commands, measurements, or targets.
+
+## Computer vision contracts
+
+- Preserve documented color, layout, dtype, normalization, coordinate, class-map, and timestamp conventions. Validate conversions at changed boundaries.
+- Use deployment-representative splits. Avoid leakage through duplicate images, adjacent frames, subjects, cameras, or sites according to the intended generalization goal. Keep final holdout data out of tuning.
+- Record code/configuration, dataset/split, checkpoint, dependencies, seeds, and hardware needed to interpret experiments. Report known nondeterminism and benchmark conditions.
+- Compare quality and performance with a stated baseline using the same protocol. Separate synthetic smoke checks from representative evaluation.
+- Keep private media, credentials, and large artifacts out of Git. Use the project's approved artifact storage and sanitized fixtures.
+
+## Independent validation
+
+- For meaningful behavior changes, use a separate testing agent after implementation. Give it the requirements and exact target; it must derive checks independently and report evidence.
+- The testing agent may run bounded local checks and create temporary diagnostics. It must not change implementation files or publish anything. Persistent test changes require explicit assignment and isolated paths or a worktree.
+- Fix confirmed failures and revalidate affected behavior. State when independent testing or representative evaluation could not run; missing resources do not count as a pass.
+- Keep CI checks authoritative for mechanically enforceable requirements. Skills guide behavior and do not guarantee compliance.
+
+## Resource and delivery boundaries
+
+- Use bounded local checks by default. Obtain authorization for long training runs, paid compute, large downloads, production changes, or external writes unless already authorized in the task.
+- Follow the project's branch and delivery policy. Do not infer permission to push, merge, publish, or deploy from a skill invocation.
+- Report what changed, verification outcomes, and material remaining limitations. Never claim tests or experiments ran when they did not.
